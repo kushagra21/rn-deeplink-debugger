@@ -1,6 +1,6 @@
 import Table from "cli-table3";
 import pc from "picocolors";
-import type { Check, DomainReport, Finding, LinkKind, LinkPattern, Platform, ScanResult } from "../types.js";
+import type { Check, DomainReport, Finding, LinkKind, LinkPattern, OpenReport, Platform, ScanResult } from "../types.js";
 
 const PLATFORM_LABEL: Record<Platform, string> = { ios: "iOS", android: "Android" };
 const KIND_LABEL: Record<LinkKind, string> = { scheme: "custom scheme", universal: "universal link", "app-link": "app link" };
@@ -93,5 +93,14 @@ export function formatVerify(reports: DomainReport[]): string {
     out.push("");
   }
   out.push(summary(reports.flatMap((r) => [...r.checks, ...r.files.flatMap((f) => f.checks)])));
+  return out.join("\n");
+}
+
+export function formatOpen(report: OpenReport): string {
+  const out = [`${pc.bold("Opening")} ${report.url}`];
+  for (const device of report.devices) {
+    out.push(`  ${pc.bold(`${PLATFORM_LABEL[device.platform]} · ${device.device}`)}`, ...formatChecks(device.checks, "    "));
+  }
+  if (report.checks.length) out.push("", ...formatChecks(report.checks, "  "));
   return out.join("\n");
 }

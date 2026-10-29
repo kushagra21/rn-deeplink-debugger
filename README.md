@@ -29,6 +29,17 @@ npx rn-deeplink verify                         # every domain in the project
 npx rn-deeplink verify example.com --path /product/42 --sha256 AB:CD:...
 ```
 
+`open` sends a URL to the booted iOS simulator and the running Android emulator or device. If
+several are running, it asks which one to use, or you can pass `--device`. On Android it acts like a
+link tapped in a browser: it reports which app actually handled the link, and for https links it
+shows the App Link verification state (`pm get-app-links`).
+
+```bash
+npx rn-deeplink open myapp://product/42
+npx rn-deeplink open https://example.com/product/42 --platform android --reverify
+npx rn-deeplink open https://example.com/product/42 --direct   # skip verification, straight to the app
+```
+
 ## Development
 
 ```bash

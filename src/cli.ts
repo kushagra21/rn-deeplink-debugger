@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { Command } from "commander";
+import { openCommand } from "./commands/open.js";
 import { scanCommand } from "./commands/scan.js";
 import { verifyCommand } from "./commands/verify.js";
 import { notImplemented } from "./report/format.js";
@@ -41,11 +42,17 @@ export function buildProgram(): Command {
 
   program
     .command("open")
-    .description("Open a URL on a booted simulator, emulator or device")
-    .argument("[url]", "URL to open")
+    .description("Open a URL on a booted iOS simulator and/or Android emulator or device")
+    .argument("[url]", "URL to open, e.g. myapp://product/42 or https://example.com/product/42")
+    .option("-C, --cwd <dir>", "project root, used to find the Android package", process.cwd())
     .option("-p, --platform <platform>", "ios | android | both", "both")
+    .option("-d, --device <id or name>", "device to use when several are running")
+    .option("--package <name>", "Android package to check against (default: from the project)")
+    .option("--direct", "Android: send the intent straight to the app, skipping verification and the app chooser")
+    .option("--reverify", "Android: re-run App Link verification before opening")
     .option("--all", "open every saved link from .deeplinks.json")
-    .action(() => notImplemented("open"));
+    .option("--json", "print machine-readable JSON")
+    .action(openCommand);
 
   program
     .command("test")

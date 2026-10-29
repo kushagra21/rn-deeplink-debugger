@@ -58,6 +58,20 @@ export interface DomainReport {
   files: FileReport[];
 }
 
+export interface DeviceReport {
+  platform: Platform;
+  /** e.g. "iPhone 16 Pro (iOS 18.2)" */
+  device: string;
+  checks: Check[];
+}
+
+export interface OpenReport {
+  url: string;
+  /** Notes not tied to one device, e.g. a platform that was skipped. */
+  checks: Check[];
+  devices: DeviceReport[];
+}
+
 export interface ScanResult {
   root: string;
   /** Set for Expo projects; `configFile` is app.json or app.config.*. */
