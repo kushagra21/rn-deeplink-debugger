@@ -1,0 +1,13 @@
+apply plugin: "com.android.application"
+
+android {
+    namespace "com.example.broken"
+    defaultConfig {
+        applicationId "com.example.broken"
+    }
+    buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+        }
+    }
+}

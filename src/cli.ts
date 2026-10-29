@@ -1,5 +1,8 @@
+import { realpathSync } from "node:fs";
 import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { Command } from "commander";
+import { scanCommand } from "./commands/scan.js";
 import { notImplemented } from "./report/format.js";
 
 const require = createRequire(import.meta.url);
@@ -18,7 +21,7 @@ export function buildProgram(): Command {
     .description("Read the project's iOS, Android and Expo link config (works offline)")
     .option("-C, --cwd <dir>", "project root", process.cwd())
     .option("--json", "print machine-readable JSON")
-    .action(() => notImplemented("scan"));
+    .action(scanCommand);
 
   program
     .command("verify")
@@ -45,7 +48,8 @@ export function buildProgram(): Command {
   return program;
 }
 
-// Only parse argv when run as a binary, so tests can import buildProgram.
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("rn-deeplink")) {
+// Only parse argv when run as a binary (including through an npm .bin symlink), so tests can import buildProgram.
+const entry = process.argv[1];
+if (entry && import.meta.url === pathToFileURL(realpathSync(entry)).href) {
   await buildProgram().parseAsync(process.argv);
 }

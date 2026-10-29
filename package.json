@@ -34,7 +34,9 @@
   "dependencies": {
     "cli-table3": "^0.6.5",
     "commander": "^15.0.0",
-    "picocolors": "^1.1.1"
+    "fast-xml-parser": "^5.11.2",
+    "picocolors": "^1.1.1",
+    "plist": "^5.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

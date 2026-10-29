@@ -1,0 +1,1 @@
+{ "name": "BrokenApp", "private": true, "dependencies": { "react-native": "0.82.0" } }
