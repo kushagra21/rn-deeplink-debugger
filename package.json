@@ -12,7 +12,7 @@
   "bugs": "https://github.com/kushagra21/rn-deeplink-debugger/issues",
   "type": "module",
   "bin": {
-    "rn-deeplink": "./dist/cli.js"
+    "rn-deeplink": "dist/cli.js"
   },
   "files": [
     "dist/cli.js",
