@@ -6,3 +6,6 @@ coverage/
 
 # Fixture projects ship a fake Expo CLI
 !fixtures/*/node_modules/
+
+# Local project spec, kept out of the public repo
+CLAUDE.md
