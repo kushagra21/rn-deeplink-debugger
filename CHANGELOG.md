@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0
+
+- New `routes` command: lists Expo Router (`app/`) and React Navigation (`linking` config, static API) routes with the links that reach them. Reports saved links and intent filter paths that land on no route or only a catch-all, `linking.config` entries for screens that don't exist, screens without a deep link path, and routes Android App Links don't reach.
+- `test` shows the screen a URL opens and its params; `test --all` gets a Screen column.
+- `verify` reads the app's signing keys from Gradle (debug and release/upload keystores, Groovy or Kotlin DSL, passwords from `gradle.properties` or the environment) and checks their fingerprints are in `assetlinks.json`. It also flags release builds signed with the debug key.
+- `verify` checks the https links saved in `.deeplinks.json` against the AASA rules.
+- `.deeplinks.json` can hold `"android": { "sha256": [...] }` (e.g. the Play App Signing key) and `"ios": { "teamId": "..." }`, which `verify` always checks.
+
 ## 0.1.0
 
 First release.

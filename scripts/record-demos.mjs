@@ -33,6 +33,11 @@ const demos = [
     ],
   },
   {
+    name: "routes",
+    fixture: "react-navigation-app",
+    commands: [["routes"], ["test", "bareapp://product/42"]],
+  },
+  {
     name: "links",
     fixture: "bare-rn",
     commands: [["links", "init"], ["links", "add", "https://example.com/item/42", "--name", "Old item page"], ["test", "--all"]],

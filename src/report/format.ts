@@ -208,7 +208,30 @@ export function formatOpen(report: OpenReport): string {
 export function formatTest(report: TestReport): string {
   const out = [`${pc.bold("Testing")} ${report.url}`];
   for (const { platform, checks } of report.platforms) out.push(`  ${pc.bold(PLATFORM_LABEL[platform])}`, ...formatChecks(checks, "    "));
+  if (report.screen) out.push(`  ${pc.bold(`Screen`)} ${pc.dim(`(${report.screen.router})`)}`, ...formatChecks(report.screen.checks, "    "));
   if (report.checks.length) out.push("", ...formatChecks(report.checks, "  "));
+  return out.join("\n");
+}
+
+export function formatRoutes(report: {
+  router: string;
+  source: string;
+  routes: { path: string; screen: string; ios: string[]; android: string[] }[];
+  findings: Finding[];
+}): string {
+  const name = report.router === "expo-router" ? "Expo Router" : "React Navigation";
+  const out = [`${pc.bold("Router")}   ${name}${report.source ? ` · ${report.source}` : ""}`];
+  if (report.routes.length) {
+    const links = (values: string[]): Cell => (values.length ? values.join("\n") : [{ text: "–", color: pc.dim }]);
+    const rows = report.routes.map((r): Cell[] => [r.path, [{ text: r.screen, color: report.router === "expo-router" ? pc.dim : undefined }], links(r.ios), links(r.android)]);
+    out.push("", fittedTable(["Path", "Screen", "iOS", "Android"], rows, [1, 2, 3]));
+    if (report.routes.some((r) => r.ios.some((l) => l.endsWith("(AASA)")))) {
+      const legend = "(AASA) = the domain is an associated domain; which paths open the app is set by its apple-app-site-association.";
+      out.push(...wrap(legend, terminalWidth()).map((line) => pc.dim(line)));
+    }
+  }
+  if (report.findings.length) out.push("", formatFindings(report.findings));
+  out.push("", summary(report.findings));
   return out.join("\n");
 }
 
@@ -218,19 +241,26 @@ const worst = (checks: Check[]): Check["level"] =>
 /** A table with one row per saved link, then the details of links with problems. */
 export function formatTestAll(result: { file: string; links: { link: { url: string; name?: string }; report: TestReport }[] }): string {
   const platforms = (["ios", "android"] as const).filter((p) => result.links.some((l) => l.report.platforms.some((r) => r.platform === p)));
+  const hasScreens = result.links.some((l) => l.report.screen);
   const rows = result.links.map(({ link, report }, i): Cell[] => {
     const cells = platforms.map((platform): Cell => {
       const checks = report.platforms.find((r) => r.platform === platform)?.checks;
       return checks ? ICON[worst(checks)] : [{ text: "–", color: pc.dim }];
     });
+    if (hasScreens) cells.push(report.screen ? ICON[worst(report.screen.checks)] : [{ text: "–", color: pc.dim }]);
     const name: Part[] = link.name ? [{ text: `${link.name}\n` }, { text: link.url, color: pc.dim }] : [{ text: link.url }];
     return [[{ text: String(i + 1), color: pc.dim }], name, ...cells];
   });
-  const table = fittedTable(["#", "Link", ...platforms.map((p) => PLATFORM_LABEL[p])], rows, [1]);
+  const table = fittedTable(["#", "Link", ...platforms.map((p) => PLATFORM_LABEL[p]), ...(hasScreens ? ["Screen"] : [])], rows, [1]);
 
-  const problems = result.links.filter(({ report }) => report.platforms.some((p) => worst(p.checks) !== "pass"));
+  const problems = result.links.filter(({ report }) => [...report.platforms, ...(report.screen ? [report.screen] : [])].some((p) => worst(p.checks) !== "pass"));
   const details = problems.map(({ link, report }) => {
-    const relevant = { ...report, checks: [], platforms: report.platforms.filter((p) => worst(p.checks) !== "pass") };
+    const relevant: TestReport = {
+      ...report,
+      checks: [],
+      platforms: report.platforms.filter((p) => worst(p.checks) !== "pass"),
+      screen: report.screen && worst(report.screen.checks) !== "pass" ? report.screen : undefined,
+    };
     return `${link.name ? `${pc.bold(link.name)}: ` : ""}${formatTest(relevant)}`;
   });
   const failed = result.links.filter(({ report }) => report.platforms.some((p) => worst(p.checks) === "error")).length;

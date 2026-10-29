@@ -1,0 +1,8 @@
+{
+  "links": [
+    { "name": "Product", "url": "bareapp://product/42" },
+    { "name": "Product (web)", "url": "https://example.com/product/7?ref=mail" },
+    { "name": "Profile", "url": "bareapp://user" },
+    { "name": "Cart", "url": "bareapp://cart" }
+  ]
+}

@@ -5,7 +5,7 @@
 
 **Find out why a deep link, universal link or App Link doesn't open your React Native app, and test links on simulators, emulators and devices.**
 
-It reads your iOS, Android and Expo config, checks the association files on your domain, explains why a given URL does or doesn't open the app, and fires links at running devices. Every problem it reports says what's wrong and how to fix it.
+It reads your iOS, Android and Expo config, checks the association files on your domain, maps URLs to your Expo Router or React Navigation screens, explains why a given URL does or doesn't open the app, and fires links at running devices. Every problem it reports says what's wrong and how to fix it.
 
 ![rn-deeplink scan finding problems in a project's link config](docs/media/scan.gif)
 
@@ -22,8 +22,9 @@ Debugging deep links usually means guessing. Is it `apple-app-site-association`,
 | Command | What it does | Network |
 | --- | --- | --- |
 | [`scan`](#scan) | Lists every link the app claims on iOS and Android, with warnings | no |
-| [`test <url>`](#test) | Explains whether a URL opens the app on each platform, and why not | no (optional) |
-| [`verify [domains]`](#verify) | Checks `apple-app-site-association` and `assetlinks.json` on your domains | yes |
+| [`test <url>`](#test) | Explains whether a URL opens the app on each platform, which screen it opens, and why not | no (optional) |
+| [`verify [domains]`](#verify) | Checks `apple-app-site-association` and `assetlinks.json` against the app's IDs, signing keys and paths | yes |
+| [`routes`](#routes) | Lists Expo Router / React Navigation routes, which links reach them, and links that land nowhere | no |
 | [`open <url>`](#open) | Opens a URL on the booted simulator and/or Android emulator or device | no |
 | [`links`](#saved-links) | Manages the team's shared test links in `.deeplinks.json` | no |
 
@@ -60,6 +61,8 @@ npx rn-deeplink test https://example.com/product/42 --online   # also check the 
 
 When nothing matches, `test` names the closest pattern and the part that failed. It also flags matches a real tap can't reach, such as a filter without `BROWSABLE`. iOS paths come from the AASA file on your server, so `--online` fetches it, or `--aasa <file>` checks a local copy.
 
+In Expo Router and React Navigation apps, `test` also shows the screen the URL opens, with its params. For example, `Opens app/product/[id].tsx with {"id":"42"}` or `Opens Profile with {"id":"9"}`. It warns when no route matches, or when only a catch-all route does.
+
 ### verify
 
 ```bash
@@ -67,15 +70,47 @@ npx rn-deeplink verify                      # every domain the project uses
 npx rn-deeplink verify example.com --sha256 AB:CD:... --path /product/42
 ```
 
-The expected app IDs, packages and paths come from the project. It checks:
+The expected app IDs, packages, signing keys and paths come from the project. It checks:
 
 - HTTPS, status 200, no redirects (Apple and Google don't follow them), JSON and its Content-Type, and the AASA's 128 KB limit
 - single-page-app fallbacks that serve `index.html` instead of the file
-- that the AASA lists your `TEAMID.bundle.id` (it names a team ID mismatch), and that its `components` / `paths` open the paths your Android filters handle (using iOS's matching rules: first rule wins, `exclude`, wildcards)
+- that the AASA lists your `TEAMID.bundle.id` from the entitlements and Xcode project (it names a team ID mismatch)
+- that its `components` / `paths` open the paths your Android filters handle and the https links saved in `.deeplinks.json`, using iOS's matching rules: first rule wins, `exclude`, wildcards
 - **Apple's CDN copy**, which is what devices actually read, so you know when it's missing or out of date
-- that `assetlinks.json` lists your package with `handle_all_urls`, with well-formed SHA-256 fingerprints (SHA-1 is flagged), including your release key (`--sha256`) and your debug keystore's fingerprint
+- that `assetlinks.json` lists your package with `handle_all_urls`, with well-formed SHA-256 fingerprints (SHA-1 is flagged)
+- **the keys your app is signed with.** It reads every signing config in `android/app/build.gradle` (Groovy or Kotlin DSL), with passwords from `gradle.properties` (the project's or `~/.gradle`) or environment variables. It then checks each keystore's fingerprint (debug, and the release/upload key) is listed, and flags release builds that are still signed with the debug key.
+- the Play App Signing key, and any other fingerprint that must be listed: pass it with `--sha256`, or save it in `.deeplinks.json` so every run and CI checks it:
 
-> **Tip:** with Play App Signing, the fingerprint `assetlinks.json` needs is the *app signing key* from Play Console → Test and release → App integrity, not your upload key.
+```json
+{
+  "links": [],
+  "android": { "sha256": ["AB:CD:…"] },
+  "ios": { "teamId": "ABCDE12345" }
+}
+```
+
+> **Tip:** with Play App Signing, Google re-signs your app, so the fingerprint `assetlinks.json` needs is the *app signing key* from Play Console → Test and release → App integrity, not your upload key. `ios.teamId` is for projects whose Xcode project doesn't set a team.
+
+### routes
+
+![rn-deeplink routes showing React Navigation routes and problems](docs/media/routes.gif)
+
+```bash
+npx rn-deeplink routes
+```
+
+`routes` lists every route the app's navigation handles, the screen it opens, and which links reach it on each platform. It reads:
+
+- **Expo Router** from `app/` (or `src/app/`). Groups like `(tabs)` don't add to the path, `[id]` is a parameter and `[...slug]` a catch-all, and layouts, `+not-found` and API routes are skipped.
+- **React Navigation** from your source, without running it. It reads the `linking` config passed to `NavigationContainer` (`prefixes` plus `config.screens`, nested navigators, `path` / `exact`, also when `config` is a variable or comes from another file) and the static API (`create…Navigator({ screens })` with per-screen `linking` or `enabled: 'auto'`). It collects the declared screens from `<X.Screen name="…">`.
+
+It reports:
+
+- **links that land nowhere:** saved links and Android intent filter paths that open the app, but match no route (or only a catch-all like `*` / `+not-found`)
+- **React Navigation config drift:** `linking.config` entries for screens no navigator declares, and screens with no deep link path
+- **routes App Links don't reach:** routes that open in the browser on Android because no https intent filter covers them
+
+Anything built at runtime (computed paths, configs from packages) is reported as not read, never guessed.
 
 ### open
 
@@ -102,9 +137,11 @@ npx rn-deeplink links add https://example.com/product/42 --name "Product page"
 npx rn-deeplink links add myapp://settings --platform ios
 npx rn-deeplink links                         # list; remove with: links remove <number|url|name>
 
-npx rn-deeplink test --all                    # offline check of every link
+npx rn-deeplink test --all                    # offline check of every link, and the screen it opens
 npx rn-deeplink open --all                    # fire each at the running devices (--step: one at a time)
 ```
+
+`verify` also checks saved https links against the AASA rules, and `routes` checks they land on a real screen.
 
 ```json
 {
@@ -132,6 +169,7 @@ jobs:
         with:
           node-version: 22
       - run: npx rn-deeplink scan
+      - run: npx rn-deeplink routes
       - run: npx rn-deeplink test --all
 ```
 
@@ -141,13 +179,13 @@ For Expo projects with an `app.config.ts`, run `npm ci` first so `scan` can eval
 
 - Node.js 22.12 or newer
 - `open` on iOS needs macOS with Xcode. On Android it needs `adb` (Android Studio or SDK Platform-Tools), found through `ANDROID_HOME` or the default SDK location.
-- The debug keystore fingerprint check in `verify` needs a JDK (Android Studio's bundled one works).
+- Reading keystore fingerprints in `verify` needs a JDK (Android Studio's bundled one works). Keystore passwords are passed to `keytool` through an environment variable, never on the command line.
 
 `rn-deeplink` never changes your project files. The only file it writes is `.deeplinks.json`, and only when you run a `links` command.
 
 ## Roadmap
 
-- Show which React Navigation / Expo Router screen a URL resolves to
+- `verify` and `routes` checking universal link paths against the live AASA per route
 - A local web UI (`rn-deeplink ui`) with one-click "open on device"
 - An MCP server, so AI coding agents can call `scan`, `verify` and `open`
 

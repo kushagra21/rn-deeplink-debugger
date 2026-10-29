@@ -78,6 +78,8 @@ export interface TestReport {
   url: string;
   checks: Check[];
   platforms: { platform: Platform; checks: Check[] }[];
+  /** The screen the URL opens, when the project uses Expo Router or React Navigation. */
+  screen?: { router: string; checks: Check[] };
 }
 
 export interface ScanResult {

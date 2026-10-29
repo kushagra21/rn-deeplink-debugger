@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { Command } from "commander";
 import { linksAddCommand, linksInitCommand, linksListCommand, linksRemoveCommand } from "./commands/links.js";
 import { openCommand } from "./commands/open.js";
+import { routesCommand } from "./commands/routes.js";
 import { scanCommand } from "./commands/scan.js";
 import { testCommand } from "./commands/test.js";
 import { verifyCommand } from "./commands/verify.js";
@@ -67,6 +68,13 @@ export function buildProgram(): Command {
     .option("--aasa <file>", "check iOS paths against a local apple-app-site-association file")
     .option("--json", "print machine-readable JSON")
     .action(testCommand);
+
+  program
+    .command("routes")
+    .description("Show the app's Expo Router / React Navigation routes, which links reach them, and links that land nowhere")
+    .option("-C, --cwd <dir>", "project root", process.cwd())
+    .option("--json", "print machine-readable JSON")
+    .action(routesCommand);
 
   const links = program.command("links").description("Manage the test links shared in .deeplinks.json");
   links

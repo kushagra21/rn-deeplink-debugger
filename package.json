@@ -1,6 +1,6 @@
 {
   "name": "rn-deeplink",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Find out why a deep link or universal/app link does not open your React Native app, and test links on simulators, emulators and devices.",
   "license": "MIT",
   "author": "Kushagra Sinha",

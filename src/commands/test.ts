@@ -7,7 +7,9 @@ import { formatTest, formatTestAll, patternUrl } from "../report/format.js";
 import type { Check, LinkPattern, Platform, ScanResult, TestReport } from "../types.js";
 import { unique } from "../util/fs.js";
 import { describeRule, firstMatchingRule, readAasaApps, urlParts } from "../verify/aasa.js";
+import { readRoutes, type RouterInfo } from "../routes/index.js";
 import { describeFailure, fetchFile, type FetchLike } from "../verify/fetch.js";
+import { ROUTER_NAME, screenChecks } from "./routes.js";
 import { runScan } from "./scan.js";
 
 export interface TestOptions {
@@ -22,6 +24,7 @@ export interface TestOptions {
 export interface TestDeps {
   scan?: (root: string) => ScanResult | null;
   fetch?: FetchLike;
+  routes?: (root: string) => RouterInfo | null;
 }
 
 const PLATFORM_NAME: Record<Platform, string> = { ios: "iOS", android: "Android" };
@@ -164,7 +167,14 @@ async function platformChecks(platform: Platform, url: LinkUrl, scan: ScanResult
 const NO_PROJECT = "No React Native project here. Run this in your project root, or pass --cwd <dir>.";
 const notAUrl = (input: string) => `"${input}" isn't a full URL. Include the scheme, e.g. myapp://home or https://${input}`;
 
-async function testWithScan(input: string, scan: ScanResult, options: TestOptions, deps: TestDeps, only?: Platform): Promise<TestReport | { error: string }> {
+async function testWithScan(
+  input: string,
+  scan: ScanResult,
+  router: RouterInfo | null,
+  options: TestOptions,
+  deps: TestDeps,
+  only?: Platform,
+): Promise<TestReport | { error: string }> {
   const url = parseLinkUrl(input);
   if (!url) return { error: notAUrl(input) };
   const platforms: TestReport["platforms"] = [];
@@ -175,14 +185,16 @@ async function testWithScan(input: string, scan: ScanResult, options: TestOption
   if (platforms.length && platforms.every((p) => !p.checks.some((c) => c.level === "error"))) {
     checks.push({ level: "info", message: `Try it on a device: rn-deeplink open ${input}` });
   }
-  return { url: input, checks, platforms };
+  const screen = router ? { router: ROUTER_NAME[router.router], checks: screenChecks(router, url) } : undefined;
+  return { url: input, checks, platforms, ...(screen && { screen }) };
 }
 
 export async function runTest(input: string, options: TestOptions, deps: TestDeps = {}): Promise<TestReport | { error: string }> {
   if (!parseLinkUrl(input)) return { error: notAUrl(input) };
-  const scan = (deps.scan ?? runScan)(resolve(options.cwd));
+  const root = resolve(options.cwd);
+  const scan = (deps.scan ?? runScan)(root);
   if (!scan) return { error: NO_PROJECT };
-  return testWithScan(input, scan, options, deps);
+  return testWithScan(input, scan, (deps.routes ?? readRoutes)(root), options, deps);
 }
 
 export interface TestAllReport {
@@ -199,17 +211,18 @@ export async function runTestAll(options: TestOptions, deps: TestDeps = {}): Pro
   if (links.length === 0) return { error: `${LINKS_FILE} has no links. Add one with rn-deeplink links add <url>.` };
   const scan = (deps.scan ?? runScan)(root);
   if (!scan) return { error: NO_PROJECT };
+  const router = (deps.routes ?? readRoutes)(root);
 
   const results: TestAllReport["links"] = [];
   for (const link of links) {
-    const report = await testWithScan(link.url, scan, options, deps, link.platform);
+    const report = await testWithScan(link.url, scan, router, options, deps, link.platform);
     if ("error" in report) return report;
     results.push({ link, report });
   }
   return { file: LINKS_FILE, links: results };
 }
 
-const hasError = (report: TestReport) => report.platforms.some((p) => p.checks.some((c) => c.level === "error"));
+const hasError = (report: TestReport) => [...report.platforms, ...(report.screen ? [report.screen] : [])].some((p) => p.checks.some((c) => c.level === "error"));
 
 export async function testCommand(url: string | undefined, options: TestOptions & { all?: boolean }): Promise<void> {
   const fail = (message: string) => {

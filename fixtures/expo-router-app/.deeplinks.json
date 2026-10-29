@@ -1,0 +1,8 @@
+{
+  "links": [
+    { "name": "Product", "url": "shop://product/42" },
+    { "name": "Product (web)", "url": "https://shop.example.com/product/1" },
+    { "name": "Old page", "url": "https://shop.example.com/old/thing" },
+    { "name": "Missing", "url": "shop://missing/page" }
+  ]
+}
