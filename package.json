@@ -1,0 +1,45 @@
+{
+  "name": "rn-deeplink",
+  "version": "0.0.0",
+  "description": "Find out why a deep link or universal/app link does not open your React Native app, and test links on simulators, emulators and devices.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "rn-deeplink": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "start": "node dist/cli.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "react-native",
+    "expo",
+    "deep-link",
+    "universal-links",
+    "app-links",
+    "apple-app-site-association",
+    "assetlinks",
+    "cli"
+  ],
+  "dependencies": {
+    "cli-table3": "^0.6.5",
+    "commander": "^15.0.0",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsup": "^9.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
