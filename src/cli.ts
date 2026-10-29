@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { Command } from "commander";
 import { scanCommand } from "./commands/scan.js";
+import { verifyCommand } from "./commands/verify.js";
 import { notImplemented } from "./report/format.js";
 
 const require = createRequire(import.meta.url);
@@ -25,10 +26,18 @@ export function buildProgram(): Command {
 
   program
     .command("verify")
-    .description("Check apple-app-site-association and assetlinks.json for a domain")
-    .argument("<domain>", "domain to check, e.g. example.com")
+    .description("Check apple-app-site-association and assetlinks.json for your domains")
+    .argument("[domains...]", "domains to check (default: every domain the project uses)")
+    .option("-C, --cwd <dir>", "project root, used to find the expected app IDs", process.cwd())
+    .option("-p, --platform <platform>", "ios | android | both", "both")
+    .option("--team-id <id>", "Apple team ID (default: from the Xcode project)")
+    .option("--bundle-id <ids...>", "iOS bundle IDs (default: from the project)")
+    .option("--package <names...>", "Android package names (default: from the project)")
+    .option("--sha256 <fingerprints...>", "signing certificate fingerprints assetlinks.json must include")
+    .option("--path <paths...>", "paths that should open the app, checked against the AASA rules")
+    .option("--no-cdn", "don't compare with Apple's CDN copy")
     .option("--json", "print machine-readable JSON")
-    .action(() => notImplemented("verify"));
+    .action(verifyCommand);
 
   program
     .command("open")

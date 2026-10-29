@@ -36,6 +36,28 @@ export interface Finding {
   source?: string;
 }
 
+/** One line of a verify report: a passed check or a problem. */
+export interface Check {
+  level: FindingLevel | "pass";
+  message: string;
+  fix?: string;
+}
+
+export interface FileReport {
+  platform: Platform;
+  /** e.g. "apple-app-site-association" */
+  file: string;
+  /** Why the file wasn't checked, if it wasn't. */
+  skipped?: string;
+  checks: Check[];
+}
+
+export interface DomainReport {
+  domain: string;
+  checks: Check[];
+  files: FileReport[];
+}
+
 export interface ScanResult {
   root: string;
   /** Set for Expo projects; `configFile` is app.json or app.config.*. */

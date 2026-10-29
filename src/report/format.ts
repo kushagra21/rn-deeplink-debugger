@@ -1,10 +1,10 @@
 import Table from "cli-table3";
 import pc from "picocolors";
-import type { Finding, LinkKind, LinkPattern, Platform, ScanResult } from "../types.js";
+import type { Check, DomainReport, Finding, LinkKind, LinkPattern, Platform, ScanResult } from "../types.js";
 
 const PLATFORM_LABEL: Record<Platform, string> = { ios: "iOS", android: "Android" };
 const KIND_LABEL: Record<LinkKind, string> = { scheme: "custom scheme", universal: "universal link", "app-link": "app link" };
-const ICON = { error: pc.red("✖"), warning: pc.yellow("⚠"), info: pc.blue("ℹ") };
+const ICON = { error: pc.red("✖"), warning: pc.yellow("⚠"), info: pc.blue("ℹ"), pass: pc.green("✔") };
 
 export function notImplemented(command: string): never {
   console.error(pc.yellow(`\`${command}\` is not implemented yet.`));
@@ -45,8 +45,8 @@ export function formatFindings(findings: Finding[]): string {
     .join("\n\n");
 }
 
-function summary(findings: Finding[]): string {
-  const count = (level: Finding["level"]) => findings.filter((f) => f.level === level).length;
+function summary(findings: (Finding | Check)[]): string {
+  const count = (level: Check["level"]) => findings.filter((f) => f.level === level).length;
   const errors = count("error");
   const warnings = count("warning");
   if (!errors && !warnings) return pc.green("✔ No problems found.");
@@ -74,5 +74,24 @@ export function formatScan(result: ScanResult): string {
   }
   if (result.findings.length) out.push("", formatFindings(result.findings));
   out.push("", summary(result.findings));
+  return out.join("\n");
+}
+
+function formatChecks(checks: Check[], indent: string): string[] {
+  return checks.flatMap((c) => [`${indent}${ICON[c.level]} ${c.message}`, ...(c.fix ? [`${indent}  ${pc.dim("Fix:")} ${c.fix}`] : [])]);
+}
+
+export function formatVerify(reports: DomainReport[]): string {
+  const out: string[] = [];
+  for (const report of reports) {
+    out.push(pc.bold(report.domain), ...formatChecks(report.checks, "  "));
+    for (const file of report.files) {
+      const title = `${PLATFORM_LABEL[file.platform]} · ${file.file}`;
+      if (file.skipped) out.push(`  ${pc.dim(`${title}: skipped, ${file.skipped}`)}`);
+      else out.push(`  ${pc.bold(title)}`, ...formatChecks(file.checks, "    "));
+    }
+    out.push("");
+  }
+  out.push(summary(reports.flatMap((r) => [...r.checks, ...r.files.flatMap((f) => f.checks)])));
   return out.join("\n");
 }

@@ -16,6 +16,19 @@ npx rn-deeplink test https://example.com/product/42
 dependencies first. If an Expo project also has `ios/` or `android/`, those folders are what the build
 uses, and `scan` warns when they are missing links that the Expo config sets up (run `npx expo prebuild`).
 
+`verify` with no domain checks every domain the project uses. It reads the expected team ID,
+bundle IDs, package names and Android paths from the project. It checks:
+- HTTPS, status 200, no redirects, JSON and Content-Type, and the 128 KB AASA limit
+- that the file lists your app ID or package with the right relation
+- that the paths Android opens are also covered by the AASA rules (add more with `--path`)
+- that Apple's CDN copy matches your server
+- that your release fingerprint (`--sha256`) and debug keystore fingerprint are included
+
+```bash
+npx rn-deeplink verify                         # every domain in the project
+npx rn-deeplink verify example.com --path /product/42 --sha256 AB:CD:...
+```
+
 ## Development
 
 ```bash
