@@ -1,6 +1,10 @@
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+import { runScan } from "../src/commands/scan.js";
 import { normalizeDomain, runVerify, type VerifyOptions } from "../src/commands/verify.js";
+import type { AndroidSigning } from "../src/verify/signing.js";
 import type { Check, DomainReport, ScanResult } from "../src/types.js";
 import { firstMatchingRule, readAasaApps, urlParts } from "../src/verify/aasa.js";
 import { HANDLE_ALL_URLS, normalizeFingerprint } from "../src/verify/assetlinks.js";
@@ -43,10 +47,18 @@ function fakeFetch(routes: Record<string, Route>): FetchLike {
   };
 }
 
-async function verify(domains: string[], routes: Record<string, Route>, options: Partial<VerifyOptions> = {}, scan?: ScanResult | null) {
+const debugOnly: AndroidSigning = { keys: [{ name: "debug", keystore: "android/app/debug.keystore", result: { fingerprint: DEBUG_FP } }], notes: [] };
+
+async function verify(
+  domains: string[],
+  routes: Record<string, Route>,
+  options: Partial<VerifyOptions> = {},
+  scan?: ScanResult | null,
+  signing: AndroidSigning | null = debugOnly,
+) {
   const result = await runVerify(domains, { cwd: ROOT, sha256: [RELEASE_FP], ...options }, {
     fetch: fakeFetch(routes),
-    debugKeystore: () => ({ fingerprint: DEBUG_FP }),
+    signing: () => signing,
     ...(scan !== undefined && { scan: () => scan }),
   });
   if ("error" in result) throw new Error(result.error);
@@ -75,7 +87,7 @@ describe("verify: healthy domains", () => {
       expect.stringContaining("Served at https://example.com/.well-known/assetlinks.json"),
       `Lists ${PACKAGE} with the handle_all_urls relation`,
       expect.stringContaining("Includes fingerprint 10:11:12:13"),
-      "Includes your debug keystore's fingerprint, so debug builds verify too",
+      "Includes your debug keystore's fingerprint, so builds signed with it verify",
     ]);
   });
 });
@@ -202,8 +214,87 @@ describe("verify: assetlinks.json contents", () => {
     const checks = await androidChecks(assetlinks({ fingerprints: [RELEASE_FP] }), { sha256: [] });
     expect(at(checks, "info")).toEqual([
       expect.stringContaining("won't verify in debug builds"),
-      "Fingerprints weren't checked against your release key.",
+      "Fingerprints weren't checked against your release or Play App Signing key.",
     ]);
+  });
+});
+
+describe("verify: signing keys and project settings", () => {
+  const UPLOAD_FP = Array.from({ length: 32 }, () => "CC").join(":");
+  const PLAY_FP = Array.from({ length: 32 }, () => "DD").join(":");
+  const withUpload: AndroidSigning = {
+    keys: [...debugOnly.keys, { name: "release", keystore: "android/app/my-upload-key.keystore", result: { fingerprint: UPLOAD_FP } }],
+    releaseConfig: "release",
+    notes: [],
+  };
+  const android = async (listed: string[], options: Partial<VerifyOptions>, signing: AndroidSigning | null, cwd = ROOT) =>
+    fileChecks(
+      await verify(["example.com"], site("example.com", { "https://example.com/.well-known/assetlinks.json": { body: assetlinks({ fingerprints: listed }) } }), { cwd, ...options }, undefined, signing),
+      "android",
+    );
+
+  it("passes when the release keystore's fingerprint is listed", async () => {
+    const checks = await android([UPLOAD_FP], { sha256: [] }, withUpload);
+    expect(at(checks, "pass")).toContain("Includes your release keystore (android/app/my-upload-key.keystore)'s fingerprint, so builds signed with it verify");
+  });
+
+  it("warns about an unlisted upload key until the Play App Signing key is known", async () => {
+    const unknown = await android([PLAY_FP], { sha256: [] }, withUpload);
+    expect(at(unknown, "warning")).toEqual([expect.stringContaining("If you use Play App Signing that's expected")]);
+    const known = await android([PLAY_FP], { sha256: [PLAY_FP] }, withUpload);
+    expect(at(known, "warning")).toEqual([]);
+    expect(at(known, "info")).toContainEqual(expect.stringContaining("That's fine if this is your Play upload key"));
+  });
+
+  it("warns when release builds are signed with the debug keystore", async () => {
+    const checks = await android([RELEASE_FP], {}, { ...debugOnly, releaseConfig: "debug" });
+    expect(at(checks, "warning")).toEqual([expect.stringContaining("Release builds are signed with the debug keystore")]);
+  });
+
+  it("passes on keystores it couldn't read", async () => {
+    const checks = await android([RELEASE_FP], {}, { keys: [{ name: "release", keystore: "k", result: { error: "the keystore password is wrong" } }], notes: ["The release signing config reads its keystore from somewhere rn-deeplink can't see (for example a CI secret)."] });
+    expect(at(checks, "info")).toEqual([
+      "Couldn't read the release keystore (k): the keystore password is wrong.",
+      expect.stringContaining("can't see (for example a CI secret)"),
+    ]);
+  });
+
+  describe("with .deeplinks.json", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rn-deeplink-"));
+    afterAll(() => rmSync(dir, { recursive: true, force: true }));
+    const project = (json: unknown) => {
+      cpSync(ROOT, dir, { recursive: true });
+      writeFileSync(join(dir, ".deeplinks.json"), JSON.stringify(json));
+      return dir;
+    };
+
+    it("checks the fingerprints saved under android.sha256", async () => {
+      const cwd = project({ links: [], android: { sha256: [PLAY_FP] } });
+      const checks = await android([RELEASE_FP], { sha256: [] }, debugOnly, cwd);
+      expect(at(checks, "error")).toEqual([expect.stringContaining(`doesn't include the fingerprint ${PLAY_FP}`)]);
+    });
+
+    it("checks saved https links against the AASA rules", async () => {
+      const cwd = project({ links: [{ name: "Old item", url: "https://example.com/item/9" }, { url: "https://example.com/product/9?ref=mail" }, { url: "https://example.com/admin/x", platform: "android" }] });
+      const report = await verify(["example.com"], site("example.com"), { cwd });
+      const ios = fileChecks(report, "ios");
+      expect(at(ios, "error")).toEqual([`/item/9 doesn't match any rule for ${APP_ID}, but it's saved in .deeplinks.json as "Old item".`]);
+      expect(at(ios, "pass")).toContain('/product/9?ref=mail opens the app ({ "/": "/product/*" })');
+    });
+
+    it("uses ios.teamId when the Xcode project has no team", async () => {
+      const cwd = project({ links: [], ios: { teamId: "ABCDE12345" } });
+      const scan = { ...runScan(ROOT)!, ios: { bundleIds: ["com.example.bareapp"], teamIds: [] } };
+      const report = await verify(["example.com"], site("example.com"), { cwd }, scan);
+      expect(at(fileChecks(report, "ios"), "pass")).toContain(`Lists your app ${APP_ID}`);
+    });
+
+    it("explains invalid settings", async () => {
+      const cwd = project({ links: [], android: { sha256: "AB" }, ios: { teamId: "nope" } });
+      expect(await runVerify(["example.com"], { cwd }, { fetch: fakeFetch({}), signing: () => null })).toEqual({
+        error: '.deeplinks.json has problems: "android.sha256" must be a list of fingerprints; "ios.teamId" must be a 10-character Apple team ID.',
+      });
+    });
   });
 });
 

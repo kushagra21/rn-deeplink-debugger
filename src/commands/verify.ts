@@ -5,8 +5,9 @@ import type { Check, DomainReport, FileReport, ScanResult } from "../types.js";
 import { unique } from "../util/fs.js";
 import { checkAasa, type ExpectedPath } from "../verify/aasa.js";
 import { checkAssetlinks } from "../verify/assetlinks.js";
+import { LINKS_FILE, readLinks, readVerifySettings, type SavedLink } from "../links.js";
 import { fetchFile, type FetchLike } from "../verify/fetch.js";
-import { debugKeystoreFingerprint, type DebugKeystore } from "../verify/signing.js";
+import { androidSigning, type AndroidSigning } from "../verify/signing.js";
 import { runScan } from "./scan.js";
 
 export interface VerifyOptions {
@@ -24,7 +25,7 @@ export interface VerifyOptions {
 export interface VerifyDeps {
   fetch?: FetchLike;
   scan?: (root: string) => ScanResult | null;
-  debugKeystore?: (root: string) => DebugKeystore | null;
+  signing?: (root: string) => AndroidSigning | null;
 }
 
 /** `https://Example.com/path` or `example.com/path` → `example.com`. */
@@ -41,6 +42,22 @@ function expectedFromAndroid(scan: ScanResult | null, domain: string): ExpectedP
     if (p.pathType !== "pathPrefix") return [];
     const sample = p.path.endsWith("/") ? `${p.path}example` : `${p.path}/example`;
     return [{ sample, suggest: `${p.path}*`, reason: `Android opens ${patternUrl(p)}` }];
+  });
+}
+
+/** Saved https links on this domain that should open the iOS app. */
+function expectedFromSavedLinks(links: SavedLink[], domain: string): ExpectedPath[] {
+  return links.flatMap((link) => {
+    if (link.platform === "android") return [];
+    let url: URL;
+    try {
+      url = new URL(link.url);
+    } catch {
+      return [];
+    }
+    if (url.protocol !== "https:" || url.host.toLowerCase() !== domain) return [];
+    const sample = `${url.pathname}${url.search}${url.hash}`;
+    return [{ sample, suggest: url.pathname, reason: `it's saved in ${LINKS_FILE}${link.name ? ` as "${link.name}"` : ""}` }];
   });
 }
 
@@ -61,11 +78,18 @@ export async function runVerify(domainArgs: string[], options: VerifyOptions, de
     };
   }
 
-  const teamIds = options.teamId ? [options.teamId] : (scan?.ios?.teamIds ?? []);
+  const settings = readVerifySettings(root);
+  if ("error" in settings) return settings;
+  const savedLinks = readLinks(root);
+  if (savedLinks && "error" in savedLinks) return savedLinks;
+
+  const projectTeams = scan?.ios?.teamIds.length ? scan.ios.teamIds : settings.teamId ? [settings.teamId] : [];
+  const teamIds = options.teamId ? [options.teamId] : projectTeams;
   const bundleIds = options.bundleId ?? scan?.ios?.bundleIds ?? [];
   const appIds = teamIds.flatMap((team) => bundleIds.map((bundle) => `${team}.${bundle}`));
   const packageNames = options.package ?? scan?.android?.packageNames ?? [];
-  const debugKeystore = platform !== "ios" && scan?.android ? (deps.debugKeystore ?? debugKeystoreFingerprint)(root) : null;
+  const fingerprints = unique([...(options.sha256 ?? []), ...settings.sha256]);
+  const signing = platform !== "ios" && scan?.android ? (deps.signing ?? androidSigning)(root) : null;
 
   return Promise.all(
     domains.map(async (domain): Promise<DomainReport> => {
@@ -98,6 +122,7 @@ export async function runVerify(domainArgs: string[], options: VerifyOptions, de
         ]);
         const paths = [
           ...expectedFromAndroid(scan, domain),
+          ...expectedFromSavedLinks(savedLinks ?? [], domain),
           ...(options.path ?? []).map((path) => ({ sample: path, suggest: path, reason: "it was passed with --path" })),
         ];
         files.push({
@@ -114,7 +139,7 @@ export async function runVerify(domainArgs: string[], options: VerifyOptions, de
         files.push({
           platform: "android",
           file: "assetlinks.json",
-          checks: checkAssetlinks(file, { packageNames, fingerprints: options.sha256 ?? [], debugKeystore }),
+          checks: checkAssetlinks(file, { packageNames, fingerprints, signing }),
         });
       } else if (platform === "both") {
         files.push({ platform: "android", file: "assetlinks.json", skipped: "the Android app has no App Link filter for it", checks: [] });

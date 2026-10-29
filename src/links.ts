@@ -16,6 +16,40 @@ export interface SavedLink {
 
 export const linksPath = (root: string) => join(root, LINKS_FILE);
 
+/** Expected values for `verify`, kept next to the links so CI always checks them. */
+export interface VerifySettings {
+  /** SHA-256 fingerprints assetlinks.json must include, e.g. the Play App Signing key. */
+  sha256: string[];
+  /** Apple team ID, for projects whose Xcode project doesn't set DEVELOPMENT_TEAM. */
+  teamId?: string;
+}
+
+/**
+ * Read `"android": { "sha256": [...] }` and `"ios": { "teamId": "..." }` from .deeplinks.json.
+ * A missing file means no settings.
+ */
+export function readVerifySettings(root: string): VerifySettings | { error: string } {
+  const file = linksPath(root);
+  if (!existsSync(file)) return { sha256: [] };
+  let json: unknown;
+  try {
+    json = JSON.parse(readFileSync(file, "utf8"));
+  } catch (error) {
+    return { error: `${LINKS_FILE} is not valid JSON: ${(error as Error).message}` };
+  }
+  if (!isDict(json)) return { sha256: [] };
+  const android = isDict(json.android) ? json.android : {};
+  const ios = isDict(json.ios) ? json.ios : {};
+  const problems: string[] = [];
+  const sha256 = android.sha256 === undefined ? [] : android.sha256;
+  if (!Array.isArray(sha256) || !sha256.every((v) => typeof v === "string")) problems.push('"android.sha256" must be a list of fingerprints');
+  if (ios.teamId !== undefined && (typeof ios.teamId !== "string" || !/^[A-Z0-9]{10}$/.test(ios.teamId))) {
+    problems.push('"ios.teamId" must be a 10-character Apple team ID');
+  }
+  if (problems.length) return { error: `${LINKS_FILE} has problems: ${problems.join("; ")}.` };
+  return { sha256: sha256 as string[], teamId: ios.teamId as string | undefined };
+}
+
 /**
  * Read the project's saved links. Returns null when there is no file. Accepts
  * `{ "links": [...] }` or a bare array; each entry is a URL string or `{ url, name?, platform? }`.

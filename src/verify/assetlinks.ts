@@ -2,13 +2,14 @@ import { isDict } from "../parsers/ios.js";
 import type { Check } from "../types.js";
 import { unique } from "../util/fs.js";
 import { servedChecks, type FetchedFile } from "./fetch.js";
-import type { DebugKeystore } from "./signing.js";
+import type { AndroidSigning } from "./signing.js";
 
 export interface AssetlinksExpectations {
   packageNames: string[];
-  /** Release / Play App Signing fingerprints passed with --sha256. */
+  /** Fingerprints that must be listed: --sha256 and android.sha256 in .deeplinks.json (e.g. the Play App Signing key). */
   fingerprints: string[];
-  debugKeystore?: DebugKeystore | null;
+  /** Keystores the project signs the app with, from Gradle. */
+  signing?: AndroidSigning | null;
 }
 
 export const HANDLE_ALL_URLS = "delegate_permission/common.handle_all_urls";
@@ -117,27 +118,59 @@ export function checkAssetlinks(file: FetchedFile, expected: AssetlinksExpectati
     );
   }
 
-  const debug = expected.debugKeystore;
-  if (debug && "fingerprint" in debug) {
-    checks.push(
-      fingerprints.has(debug.fingerprint)
-        ? { level: "pass", message: "Includes your debug keystore's fingerprint, so debug builds verify too" }
-        : {
-            level: "info",
-            message: `It doesn't include your debug keystore's fingerprint (${short(debug.fingerprint)}), so App Links won't verify in debug builds. That's fine for production.`,
-            fix: `To test App Links in debug builds, add "${debug.fingerprint}" to sha256_cert_fingerprints.`,
-          },
-    );
-  } else if (debug) {
-    checks.push({ level: "info", message: `Couldn't read android/app/debug.keystore: ${debug.error}.` });
+  checks.push(...signingChecks(fingerprints, expected));
+  return checks;
+}
+
+const PLAY_SIGNING_FIX =
+  'Copy the "App signing key certificate" SHA-256 from Play Console → Test and release → App integrity, add it to sha256_cert_fingerprints, and save it in .deeplinks.json as "android": { "sha256": ["…"] } so verify always checks it.';
+
+/** Compare the listed fingerprints with the keystores the project signs the app with. */
+function signingChecks(listed: Set<string>, expected: AssetlinksExpectations): Check[] {
+  const checks: Check[] = [];
+  const signing = expected.signing;
+  const playKnown = expected.fingerprints.length > 0;
+
+  for (const key of signing?.keys ?? []) {
+    const label = key.name === "debug" ? "debug keystore" : `${key.name} keystore (${key.keystore})`;
+    if ("error" in key.result) {
+      checks.push({ level: "info", message: `Couldn't read the ${label}: ${key.result.error}.` });
+      continue;
+    }
+    const fingerprint = key.result.fingerprint;
+    if (listed.has(fingerprint)) {
+      checks.push({ level: "pass", message: `Includes your ${label}'s fingerprint, so builds signed with it verify` });
+    } else if (key.name === "debug") {
+      checks.push({
+        level: "info",
+        message: `It doesn't include your debug keystore's fingerprint (${short(fingerprint)}), so App Links won't verify in debug builds. That's fine for production.`,
+        fix: `To test App Links in debug builds, add "${fingerprint}" to sha256_cert_fingerprints.`,
+      });
+    } else {
+      // With Play App Signing, Play re-signs the app, so the upload key needn't be listed.
+      checks.push({
+        level: playKnown ? "info" : "warning",
+        message: `It doesn't include the fingerprint of your ${label} (${short(fingerprint)}). ${
+          playKnown
+            ? "That's fine if this is your Play upload key, since Play re-signs the app with the app signing key you listed; builds you distribute yourself won't verify."
+            : "If you use Play App Signing that's expected, but then the app signing key from Play Console must be listed instead, and rn-deeplink doesn't know it yet."
+        }`,
+        fix: playKnown ? `To verify builds you distribute yourself, add "${fingerprint}" to sha256_cert_fingerprints.` : PLAY_SIGNING_FIX,
+      });
+    }
   }
 
-  if (expected.fingerprints.length === 0) {
+  if (signing?.releaseConfig === "debug") {
     checks.push({
-      level: "info",
-      message: "Fingerprints weren't checked against your release key.",
-      fix: 'Pass --sha256 with the "App signing key certificate" fingerprint from Play Console → Test and release → App integrity. With Play App Signing it differs from your upload key, a common reason App Links fail only for Play installs.',
+      level: "warning",
+      message: "Release builds are signed with the debug keystore (the React Native template's default), so they can't go to Google Play, and App Links in them only verify if the debug fingerprint is listed.",
+      fix: "Create an upload keystore and a release signing config: https://reactnative.dev/docs/signed-apk-android",
     });
+  }
+  for (const note of signing?.notes ?? []) checks.push({ level: "info", message: note });
+
+  if (!playKnown && !signing?.keys.some((k) => k.name !== "debug")) {
+    checks.push({ level: "info", message: "Fingerprints weren't checked against your release or Play App Signing key.", fix: PLAY_SIGNING_FIX });
   }
   return checks;
 }

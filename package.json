@@ -48,6 +48,7 @@
     "cli"
   ],
   "dependencies": {
+    "@babel/parser": "^8.0.8",
     "cli-table3": "^0.6.5",
     "commander": "^15.0.0",
     "fast-xml-parser": "^5.11.2",
