@@ -117,6 +117,11 @@ export function checkIntentFilter(filter: IntentFilter, syntax: FilterSyntax): {
     add("warning", `Path rules in the ${label} filter in ${name} are ignored because the filter has no host.`, addHostFix);
   }
 
+  const blockedBy = [
+    !categories.includes(BROWSABLE) && "the filter is missing the BROWSABLE category",
+    !categories.includes(DEFAULT) && "the filter is missing the DEFAULT category",
+  ].filter((reason): reason is string => !!reason);
+
   // Android combines every scheme, host and path in one filter.
   const patterns: LinkPattern[] = [];
   for (const scheme of schemes) {
@@ -126,6 +131,7 @@ export function checkIntentFilter(filter: IntentFilter, syntax: FilterSyntax): {
       kind,
       scheme,
       autoVerify: kind === "app-link" ? autoVerify : undefined,
+      blockedBy: blockedBy.length ? blockedBy : undefined,
       thirdParty: kind === "scheme" ? thirdPartyScheme(scheme) : undefined,
       source,
     };
@@ -226,10 +232,14 @@ export function parseAndroid(root: string): AndroidScan | null {
           },
           { kind: "manifest" },
         );
-        patterns.push(...result.patterns);
+        const notExported = attr(component, "exported") === "false";
+        for (const p of result.patterns) {
+          if (notExported) p.blockedBy = [...(p.blockedBy ?? []), `${name} has android:exported="false"`];
+          patterns.push(p);
+        }
         findings.push(...result.findings);
 
-        if (attr(component, "exported") === "false" && result.patterns.length && !reportedExported) {
+        if (notExported && result.patterns.length && !reportedExported) {
           reportedExported = true;
           findings.push({
             level: "error",

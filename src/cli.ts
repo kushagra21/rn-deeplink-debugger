@@ -4,8 +4,8 @@ import { pathToFileURL } from "node:url";
 import { Command } from "commander";
 import { openCommand } from "./commands/open.js";
 import { scanCommand } from "./commands/scan.js";
+import { testCommand } from "./commands/test.js";
 import { verifyCommand } from "./commands/verify.js";
-import { notImplemented } from "./report/format.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -56,10 +56,13 @@ export function buildProgram(): Command {
 
   program
     .command("test")
-    .description("Explain which link patterns a URL matches on each platform")
-    .argument("<url>", "URL to test")
+    .description("Explain whether a URL opens the app on each platform, and why not (works offline)")
+    .argument("<url>", "URL to test, e.g. https://example.com/product/42")
+    .option("-C, --cwd <dir>", "project root", process.cwd())
+    .option("--online", "fetch apple-app-site-association to check iOS paths")
+    .option("--aasa <file>", "check iOS paths against a local apple-app-site-association file")
     .option("--json", "print machine-readable JSON")
-    .action(() => notImplemented("test"));
+    .action(testCommand);
 
   return program;
 }

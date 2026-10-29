@@ -40,6 +40,17 @@ npx rn-deeplink open https://example.com/product/42 --platform android --reverif
 npx rn-deeplink open https://example.com/product/42 --direct   # skip verification, straight to the app
 ```
 
+`test` works offline and explains, for each platform, whether a URL opens the app. It matches the
+URL the way iOS and Android do (Android schemes are case-sensitive, wildcard hosts match subdomains
+only, and Android uses its own `pathPattern` glob syntax). When nothing matches, it names the closest
+pattern and the part that didn't match. iOS paths are decided by the AASA file, so check them with
+`--online`, or with `--aasa <file>` for a local copy.
+
+```bash
+npx rn-deeplink test https://example.com/product/42
+npx rn-deeplink test https://example.com/product/42 --online
+```
+
 ## Development
 
 ```bash

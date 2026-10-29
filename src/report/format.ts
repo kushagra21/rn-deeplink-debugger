@@ -1,6 +1,6 @@
 import Table from "cli-table3";
 import pc from "picocolors";
-import type { Check, DomainReport, Finding, LinkKind, LinkPattern, OpenReport, Platform, ScanResult } from "../types.js";
+import type { Check, DomainReport, Finding, LinkKind, LinkPattern, OpenReport, Platform, ScanResult, TestReport } from "../types.js";
 
 const PLATFORM_LABEL: Record<Platform, string> = { ios: "iOS", android: "Android" };
 const KIND_LABEL: Record<LinkKind, string> = { scheme: "custom scheme", universal: "universal link", "app-link": "app link" };
@@ -32,6 +32,7 @@ function patternNotes(p: LinkPattern): string {
   if (p.thirdParty) notes.push(pc.dim(p.thirdParty));
   if (p.kind === "universal") notes.push(pc.dim("paths set by AASA"));
   if (p.kind === "app-link") notes.push(p.autoVerify ? pc.green("autoVerify") : pc.yellow("no autoVerify"));
+  if (p.blockedBy) notes.push(pc.red("unreachable from links"));
   if (p.pathType === "pathPattern" || p.pathType === "pathAdvancedPattern") notes.push(pc.dim(p.pathType));
   if (p.note) notes.push(p.note);
   return notes.join(", ");
@@ -101,6 +102,13 @@ export function formatOpen(report: OpenReport): string {
   for (const device of report.devices) {
     out.push(`  ${pc.bold(`${PLATFORM_LABEL[device.platform]} · ${device.device}`)}`, ...formatChecks(device.checks, "    "));
   }
+  if (report.checks.length) out.push("", ...formatChecks(report.checks, "  "));
+  return out.join("\n");
+}
+
+export function formatTest(report: TestReport): string {
+  const out = [`${pc.bold("Testing")} ${report.url}`];
+  for (const { platform, checks } of report.platforms) out.push(`  ${pc.bold(PLATFORM_LABEL[platform])}`, ...formatChecks(checks, "    "));
   if (report.checks.length) out.push("", ...formatChecks(report.checks, "  "));
   return out.join("\n");
 }

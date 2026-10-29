@@ -18,6 +18,8 @@ export interface LinkPattern {
   pathType?: AndroidPathType;
   /** Android only: whether the intent filter has android:autoVerify="true". */
   autoVerify?: boolean;
+  /** Android only: why a tapped link can't reach this filter, e.g. a missing BROWSABLE category. */
+  blockedBy?: string[];
   /** Set when the scheme belongs to an SDK (e.g. Facebook Login) rather than the app's own links. */
   thirdParty?: string;
   note?: string;
@@ -70,6 +72,12 @@ export interface OpenReport {
   /** Notes not tied to one device, e.g. a platform that was skipped. */
   checks: Check[];
   devices: DeviceReport[];
+}
+
+export interface TestReport {
+  url: string;
+  checks: Check[];
+  platforms: { platform: Platform; checks: Check[] }[];
 }
 
 export interface ScanResult {
