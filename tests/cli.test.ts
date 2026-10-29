@@ -3,7 +3,8 @@ import { buildProgram } from "../src/cli.js";
 
 describe("cli", () => {
   it("registers the MVP commands", () => {
-    const names = buildProgram().commands.map((c) => c.name());
-    expect(names).toEqual(["scan", "verify", "open", "test"]);
+    const program = buildProgram();
+    expect(program.commands.map((c) => c.name())).toEqual(["scan", "verify", "open", "test", "links"]);
+    expect(program.commands.find((c) => c.name() === "links")!.commands.map((c) => c.name())).toEqual(["list", "add", "remove", "init"]);
   });
 });

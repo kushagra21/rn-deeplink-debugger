@@ -51,6 +51,29 @@ npx rn-deeplink test https://example.com/product/42
 npx rn-deeplink test https://example.com/product/42 --online
 ```
 
+### Saved links
+
+Keep your team's test URLs in `.deeplinks.json` and commit it:
+
+```bash
+npx rn-deeplink links init                       # one example per pattern the app declares
+npx rn-deeplink links add https://example.com/product/42 --name "Product page"
+npx rn-deeplink links add myapp://settings --platform ios
+npx rn-deeplink links                            # list (remove with: links remove <number|url|name>)
+
+npx rn-deeplink test --all                       # offline check of every link, good for CI
+npx rn-deeplink open --all                       # fire each one at the running devices (--step to go one by one)
+```
+
+```json
+{
+  "links": [
+    { "name": "Product page", "url": "https://example.com/product/42" },
+    { "name": "Settings", "url": "myapp://settings", "platform": "ios" }
+  ]
+}
+```
+
 ## Development
 
 ```bash

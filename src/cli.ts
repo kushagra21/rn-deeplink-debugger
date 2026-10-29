@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { Command } from "commander";
+import { linksAddCommand, linksInitCommand, linksListCommand, linksRemoveCommand } from "./commands/links.js";
 import { openCommand } from "./commands/open.js";
 import { scanCommand } from "./commands/scan.js";
 import { testCommand } from "./commands/test.js";
@@ -50,19 +51,50 @@ export function buildProgram(): Command {
     .option("--package <name>", "Android package to check against (default: from the project)")
     .option("--direct", "Android: send the intent straight to the app, skipping verification and the app chooser")
     .option("--reverify", "Android: re-run App Link verification before opening")
-    .option("--all", "open every saved link from .deeplinks.json")
+    .option("--all", "open every link saved in .deeplinks.json, one after another")
+    .option("--delay <ms>", "--all: milliseconds to wait between links", (value) => Number.parseInt(value, 10), 2000)
+    .option("--step", "--all: wait for Enter before each next link")
     .option("--json", "print machine-readable JSON")
     .action(openCommand);
 
   program
     .command("test")
     .description("Explain whether a URL opens the app on each platform, and why not (works offline)")
-    .argument("<url>", "URL to test, e.g. https://example.com/product/42")
+    .argument("[url]", "URL to test, e.g. https://example.com/product/42")
     .option("-C, --cwd <dir>", "project root", process.cwd())
+    .option("--all", "test every link saved in .deeplinks.json")
     .option("--online", "fetch apple-app-site-association to check iOS paths")
     .option("--aasa <file>", "check iOS paths against a local apple-app-site-association file")
     .option("--json", "print machine-readable JSON")
     .action(testCommand);
+
+  const links = program.command("links").description("Manage the test links shared in .deeplinks.json");
+  links
+    .command("list", { isDefault: true })
+    .description("List the saved links")
+    .option("-C, --cwd <dir>", "project root", process.cwd())
+    .option("--json", "print machine-readable JSON")
+    .action(linksListCommand);
+  links
+    .command("add")
+    .description("Save a test link")
+    .argument("<url>", "URL to save")
+    .option("-C, --cwd <dir>", "project root", process.cwd())
+    .option("-n, --name <name>", "short description, e.g. \"Product page\"")
+    .option("-p, --platform <platform>", "only use this link on ios or android")
+    .action(linksAddCommand);
+  links
+    .command("remove")
+    .description("Remove a saved link")
+    .argument("<link>", "its number, URL or name")
+    .option("-C, --cwd <dir>", "project root", process.cwd())
+    .action(linksRemoveCommand);
+  links
+    .command("init")
+    .description("Create .deeplinks.json with an example link for each pattern the app declares")
+    .option("-C, --cwd <dir>", "project root", process.cwd())
+    .option("--force", "replace an existing .deeplinks.json")
+    .action(linksInitCommand);
 
   return program;
 }

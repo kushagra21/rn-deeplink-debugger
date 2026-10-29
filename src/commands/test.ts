@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import pc from "picocolors";
+import { LINKS_FILE, readLinks, type SavedLink } from "../links.js";
 import { explainUrl, parseLinkUrl, type LinkUrl } from "../match.js";
-import { formatTest, patternUrl } from "../report/format.js";
+import { formatTest, formatTestAll, patternUrl } from "../report/format.js";
 import type { Check, LinkPattern, Platform, ScanResult, TestReport } from "../types.js";
 import { unique } from "../util/fs.js";
 import { describeRule, firstMatchingRule, readAasaApps, urlParts } from "../verify/aasa.js";
@@ -160,15 +161,15 @@ async function platformChecks(platform: Platform, url: LinkUrl, scan: ScanResult
   return checks;
 }
 
-export async function runTest(input: string, options: TestOptions, deps: TestDeps = {}): Promise<TestReport | { error: string }> {
-  const url = parseLinkUrl(input);
-  if (!url) return { error: `"${input}" isn't a full URL. Include the scheme, e.g. myapp://home or https://${input}` };
-  const scan = (deps.scan ?? runScan)(resolve(options.cwd));
-  if (!scan) return { error: "No React Native project here. Run this in your project root, or pass --cwd <dir>." };
+const NO_PROJECT = "No React Native project here. Run this in your project root, or pass --cwd <dir>.";
+const notAUrl = (input: string) => `"${input}" isn't a full URL. Include the scheme, e.g. myapp://home or https://${input}`;
 
+async function testWithScan(input: string, scan: ScanResult, options: TestOptions, deps: TestDeps, only?: Platform): Promise<TestReport | { error: string }> {
+  const url = parseLinkUrl(input);
+  if (!url) return { error: notAUrl(input) };
   const platforms: TestReport["platforms"] = [];
   for (const platform of ["ios", "android"] as const) {
-    if (scan[platform]) platforms.push({ platform, checks: await platformChecks(platform, url, scan, options, deps) });
+    if (scan[platform] && (!only || only === platform)) platforms.push({ platform, checks: await platformChecks(platform, url, scan, options, deps) });
   }
   const checks: Check[] = [];
   if (platforms.length && platforms.every((p) => !p.checks.some((c) => c.level === "error"))) {
@@ -177,13 +178,55 @@ export async function runTest(input: string, options: TestOptions, deps: TestDep
   return { url: input, checks, platforms };
 }
 
-export async function testCommand(url: string, options: TestOptions): Promise<void> {
-  const result = await runTest(url, options);
-  if ("error" in result) {
-    console.error(`${pc.red("✖")} ${result.error}`);
+export async function runTest(input: string, options: TestOptions, deps: TestDeps = {}): Promise<TestReport | { error: string }> {
+  if (!parseLinkUrl(input)) return { error: notAUrl(input) };
+  const scan = (deps.scan ?? runScan)(resolve(options.cwd));
+  if (!scan) return { error: NO_PROJECT };
+  return testWithScan(input, scan, options, deps);
+}
+
+export interface TestAllReport {
+  file: string;
+  links: { link: SavedLink; report: TestReport }[];
+}
+
+/** Test every link saved in .deeplinks.json. */
+export async function runTestAll(options: TestOptions, deps: TestDeps = {}): Promise<TestAllReport | { error: string }> {
+  const root = resolve(options.cwd);
+  const links = readLinks(root);
+  if (links === null) return { error: `No ${LINKS_FILE} in ${root}. Create one with rn-deeplink links init, or add links with rn-deeplink links add <url>.` };
+  if ("error" in links) return links;
+  if (links.length === 0) return { error: `${LINKS_FILE} has no links. Add one with rn-deeplink links add <url>.` };
+  const scan = (deps.scan ?? runScan)(root);
+  if (!scan) return { error: NO_PROJECT };
+
+  const results: TestAllReport["links"] = [];
+  for (const link of links) {
+    const report = await testWithScan(link.url, scan, options, deps, link.platform);
+    if ("error" in report) return report;
+    results.push({ link, report });
+  }
+  return { file: LINKS_FILE, links: results };
+}
+
+const hasError = (report: TestReport) => report.platforms.some((p) => p.checks.some((c) => c.level === "error"));
+
+export async function testCommand(url: string | undefined, options: TestOptions & { all?: boolean }): Promise<void> {
+  const fail = (message: string) => {
+    console.error(`${pc.red("✖")} ${message}`);
     process.exitCode = 1;
+  };
+  if (options.all) {
+    if (url) console.error(pc.yellow(`Ignoring ${url}: --all tests the links saved in ${LINKS_FILE}.`));
+    const result = await runTestAll(options);
+    if ("error" in result) return fail(result.error);
+    console.log(options.json ? JSON.stringify(result, null, 2) : formatTestAll(result));
+    if (result.links.some((l) => hasError(l.report))) process.exitCode = 1;
     return;
   }
+  if (!url) return fail(`Pass a URL to test (e.g. rn-deeplink test myapp://home), or --all to test the links in ${LINKS_FILE}.`);
+  const result = await runTest(url, options);
+  if ("error" in result) return fail(result.error);
   console.log(options.json ? JSON.stringify(result, null, 2) : formatTest(result));
-  if (result.platforms.some((p) => p.checks.some((c) => c.level === "error"))) process.exitCode = 1;
+  if (hasError(result)) process.exitCode = 1;
 }

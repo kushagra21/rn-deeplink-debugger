@@ -6,11 +6,6 @@ const PLATFORM_LABEL: Record<Platform, string> = { ios: "iOS", android: "Android
 const KIND_LABEL: Record<LinkKind, string> = { scheme: "custom scheme", universal: "universal link", "app-link": "app link" };
 const ICON = { error: pc.red("✖"), warning: pc.yellow("⚠"), info: pc.blue("ℹ"), pass: pc.green("✔") };
 
-export function notImplemented(command: string): never {
-  console.error(pc.yellow(`\`${command}\` is not implemented yet.`));
-  process.exit(1);
-}
-
 /** A URL-like rendering of a pattern, e.g. `https://example.com/product*`. */
 export function patternUrl(p: LinkPattern): string {
   if (p.kind === "universal") return `https://${p.host}/*`;
@@ -111,4 +106,35 @@ export function formatTest(report: TestReport): string {
   for (const { platform, checks } of report.platforms) out.push(`  ${pc.bold(PLATFORM_LABEL[platform])}`, ...formatChecks(checks, "    "));
   if (report.checks.length) out.push("", ...formatChecks(report.checks, "  "));
   return out.join("\n");
+}
+
+const worst = (checks: Check[]): Check["level"] =>
+  checks.some((c) => c.level === "error") ? "error" : checks.some((c) => c.level === "warning") ? "warning" : "pass";
+
+/** A table with one row per saved link, then the details of links with problems. */
+export function formatTestAll(result: { file: string; links: { link: { url: string; name?: string }; report: TestReport }[] }): string {
+  const platforms = (["ios", "android"] as const).filter((p) => result.links.some((l) => l.report.platforms.some((r) => r.platform === p)));
+  const table = new Table({
+    head: ["#", "Link", ...platforms.map((p) => PLATFORM_LABEL[p])].map((h) => pc.bold(h)),
+    style: { head: [], border: [] },
+    chars: { mid: "", "left-mid": "", "mid-mid": "", "right-mid": "" },
+  });
+  result.links.forEach(({ link, report }, i) => {
+    const cells = platforms.map((platform) => {
+      const checks = report.platforms.find((r) => r.platform === platform)?.checks;
+      return checks ? ICON[worst(checks)] : pc.dim("–");
+    });
+    table.push([pc.dim(String(i + 1)), link.name ? `${link.name}\n${pc.dim(link.url)}` : link.url, ...cells]);
+  });
+
+  const problems = result.links.filter(({ report }) => report.platforms.some((p) => worst(p.checks) !== "pass"));
+  const details = problems.map(({ link, report }) => {
+    const relevant = { ...report, checks: [], platforms: report.platforms.filter((p) => worst(p.checks) !== "pass") };
+    return `${link.name ? `${pc.bold(link.name)}: ` : ""}${formatTest(relevant)}`;
+  });
+  const failed = result.links.filter(({ report }) => report.platforms.some((p) => worst(p.checks) === "error")).length;
+  const summary = failed
+    ? pc.red(`${failed} of ${result.links.length} links won't open the app everywhere they should.`)
+    : pc.green(`✔ All ${result.links.length} links open the app.`);
+  return [`${pc.bold(result.file)}`, table.toString(), ...(details.length ? ["", details.join("\n\n")] : []), "", summary].join("\n");
 }
