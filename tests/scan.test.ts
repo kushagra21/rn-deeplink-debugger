@@ -63,7 +63,7 @@ describe("scan: bare RN project with common mistakes", () => {
       expect.arrayContaining([
         expect.stringContaining('URL scheme "brokenapp://"'),
         expect.stringContaining('"applinks:https://example.com"'),
-        expect.stringContaining("has no android:host"),
+        expect.stringContaining("http(s) intent filter in .MainActivity has no host"),
         expect.stringContaining('.SettingsActivity has android:exported="false"'),
       ]),
     );
@@ -77,7 +77,7 @@ describe("scan: bare RN project with common mistakes", () => {
         expect.stringContaining("set up for the Debug build but not Release"),
         expect.stringContaining("Old.entitlements lists associated domains, but no build configuration uses this file"),
         expect.stringContaining("missing the BROWSABLE category"),
-        expect.stringContaining('no android:autoVerify="true"'),
+        expect.stringContaining("doesn't set autoVerify"),
         expect.stringContaining('android:pathPrefix="product"'),
         expect.stringContaining('"OnlyAndroid" in .MainActivity has uppercase letters'),
         expect.stringContaining('"onlyios://" is registered on iOS but not on Android'),

@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "BareApp",
+    "slug": "bareapp",
+    "scheme": "bareapp",
+    "ios": {
+      "bundleIdentifier": "com.example.bareapp",
+      "associatedDomains": ["applinks:example.com", "applinks:www.example.com", "applinks:new.example.com"]
+    },
+    "android": {
+      "package": "com.example.renamed",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            { "scheme": "https", "host": "example.com", "pathPrefix": "/product" },
+            { "scheme": "https", "host": "new.example.com", "pathPrefix": "/product" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    }
+  }
+}

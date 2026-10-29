@@ -3,3 +3,6 @@ dist/
 coverage/
 *.log
 .DS_Store
+
+# Fixture projects ship a fake Expo CLI
+!fixtures/*/node_modules/

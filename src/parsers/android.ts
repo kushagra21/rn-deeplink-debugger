@@ -11,13 +11,28 @@ export interface AndroidScan {
   findings: Finding[];
 }
 
+/** One VIEW intent filter, read from AndroidManifest.xml or from Expo's android.intentFilters. */
+export interface IntentFilter {
+  /** Where the filter lives, e.g. `.MainActivity` or `android.intentFilters[0]`. */
+  name: string;
+  source: string;
+  categories: string[];
+  schemes: string[];
+  hosts: string[];
+  paths: { type: AndroidPathType; value: string }[];
+  autoVerify: boolean;
+}
+
+/** Fix suggestions are written in the syntax of the file the filter came from. */
+export type FilterSyntax = { kind: "manifest" } | { kind: "expo"; file: string };
+
 type XmlNode = Record<string, unknown>;
 
-const PATH_TYPES: AndroidPathType[] = ["path", "pathPrefix", "pathPattern", "pathAdvancedPattern", "pathSuffix"];
-const ARRAY_TAGS = new Set(["activity", "activity-alias", "intent-filter", "action", "category", "data"]);
-const VIEW = "android.intent.action.VIEW";
+export const PATH_TYPES: AndroidPathType[] = ["path", "pathPrefix", "pathPattern", "pathAdvancedPattern", "pathSuffix"];
 const BROWSABLE = "android.intent.category.BROWSABLE";
 const DEFAULT = "android.intent.category.DEFAULT";
+const ARRAY_TAGS = new Set(["activity", "activity-alias", "intent-filter", "action", "category", "data"]);
+const VIEW = "android.intent.action.VIEW";
 
 const xml = new XMLParser({
   ignoreAttributes: false,
@@ -34,6 +49,97 @@ const attr = (node: XmlNode, name: string): string | undefined => {
 };
 
 const isWeb = (scheme: string) => scheme === "http" || scheme === "https";
+
+/** Check one VIEW intent filter and expand it into link patterns. */
+export function checkIntentFilter(filter: IntentFilter, syntax: FilterSyntax): { patterns: LinkPattern[]; findings: Finding[] } {
+  const { name, source, categories, schemes, hosts, autoVerify } = filter;
+  // Android merges all <data> elements of a filter, so repeated paths are one rule.
+  const paths = [...new Map(filter.paths.map((p) => [`${p.type}:${p.value}`, p])).values()];
+  const expo = syntax.kind === "expo" ? syntax.file : undefined;
+  const findings: Finding[] = [];
+  const add = (level: Finding["level"], message: string, fix?: string) => findings.push({ level, message, fix, source });
+  const attrLabel = (key: string, value: string) => (expo ? `"${key}": "${value}"` : `android:${key}="${value}"`);
+  const addCategoryFix = (category: string) =>
+    expo
+      ? `Add "${category}" to the filter's "category" list in ${expo}.`
+      : `Add <category android:name="android.intent.category.${category}" /> to the filter.`;
+  const addHostFix = expo ? `Add a "host" to the filter's "data" in ${expo}.` : 'Add <data android:host="..." /> to the filter.';
+
+  if (schemes.length === 0) {
+    add(
+      "warning",
+      `An intent filter in ${name} has the VIEW action but no scheme, so it never matches a link.`,
+      expo ? `Add a "data" entry with a "scheme" to the filter in ${expo}.` : 'Add <data android:scheme="..." /> to the filter.',
+    );
+    return { patterns: [], findings };
+  }
+
+  const webSchemes = schemes.filter(isWeb);
+  const label = schemes.map((s) => `${s}://`).join(", ");
+
+  if (!categories.includes(BROWSABLE)) {
+    add("warning", `The ${label} intent filter in ${name} is missing the BROWSABLE category, so links tapped in a browser won't open the app.`, addCategoryFix("BROWSABLE"));
+  }
+  if (!categories.includes(DEFAULT)) {
+    add("warning", `The ${label} intent filter in ${name} is missing the DEFAULT category, so Android won't match it for ordinary link taps.`, addCategoryFix("DEFAULT"));
+  }
+  if (webSchemes.length && hosts.length === 0) {
+    add(
+      "error",
+      `An http(s) intent filter in ${name} has no host, so it claims every web URL and can't be verified as an App Link.`,
+      expo
+        ? `Add { "scheme": "https", "host": "example.com" } to the filter's "data" in ${expo} for each domain you own.`
+        : 'Add <data android:host="example.com" /> for each domain you own.',
+    );
+  } else if (webSchemes.length && !autoVerify) {
+    add(
+      "warning",
+      `The App Link filter for ${hosts.join(", ")} in ${name} doesn't set autoVerify, so Android won't verify it. Links open in the browser (Android 12+) or show an app chooser.`,
+      expo ? `Set "autoVerify": true on the filter in ${expo}.` : 'Add android:autoVerify="true" to the <intent-filter> tag.',
+    );
+  }
+  if (autoVerify && webSchemes.length === 0) {
+    add("info", `autoVerify only applies to http/https links, so it has no effect on the ${label} filter in ${name}.`);
+  }
+  for (const value of [...schemes, ...hosts]) {
+    if (value === value.toLowerCase() || value.includes("${")) continue;
+    add(
+      "warning",
+      `"${value}" in ${name} has uppercase letters. Android matches intent filters case-sensitively, but links are usually lowercase, so they may not match.`,
+      `Use "${value.toLowerCase()}" in ${expo ?? "the manifest"} and in your links.`,
+    );
+  }
+  for (const { type, value } of paths) {
+    const neverMatches = type === "path" || type === "pathPrefix" ? !value.startsWith("/") : type !== "pathSuffix" && /^[A-Za-z0-9]/.test(value);
+    if (neverMatches) add("warning", `${attrLabel(type, value)} in ${name} doesn't start with "/", so it never matches.`, `Change it to "/${value}".`);
+  }
+  if (paths.length && hosts.length === 0) {
+    add("warning", `Path rules in the ${label} filter in ${name} are ignored because the filter has no host.`, addHostFix);
+  }
+
+  // Android combines every scheme, host and path in one filter.
+  const patterns: LinkPattern[] = [];
+  for (const scheme of schemes) {
+    const kind = isWeb(scheme) ? "app-link" : "scheme";
+    const base: LinkPattern = {
+      platform: "android",
+      kind,
+      scheme,
+      autoVerify: kind === "app-link" ? autoVerify : undefined,
+      thirdParty: kind === "scheme" ? thirdPartyScheme(scheme) : undefined,
+      source,
+    };
+    if (hosts.length === 0) {
+      patterns.push(base);
+      continue;
+    }
+    for (const host of hosts) {
+      if (paths.length === 0) patterns.push({ ...base, host });
+      for (const { type, value } of paths) patterns.push({ ...base, host, path: value, pathType: type });
+    }
+  }
+  return { patterns, findings };
+}
 
 export function parseAndroid(root: string): AndroidScan | null {
   const files = walk(join(root, "android"));
@@ -95,39 +201,35 @@ export function parseAndroid(root: string): AndroidScan | null {
       let reportedExported = false;
 
       for (const filter of nodes(component["intent-filter"])) {
-        const actions = nodes(filter.action).map((n) => attr(n, "name"));
-        if (!actions.includes(VIEW)) continue;
-
-        const categories = nodes(filter.category).map((n) => attr(n, "name"));
+        if (!nodes(filter.action).some((n) => attr(n, "name") === VIEW)) continue;
         const data = nodes(filter.data);
-        const schemes = unique(data.flatMap((d) => attr(d, "scheme") ?? []).map((s) => resolvePlaceholders(s, source)));
-        const hosts = unique(
-          data.flatMap((d) => {
-            const host = attr(d, "host");
-            const port = attr(d, "port");
-            return host ? [resolvePlaceholders(port ? `${host}:${port}` : host, source)] : [];
-          }),
-        );
-        const paths = data.flatMap((d) =>
-          PATH_TYPES.flatMap((type) => {
-            const value = attr(d, type);
-            return value ? [{ type, value: resolvePlaceholders(value, source) }] : [];
-          }),
-        );
-        const autoVerify = attr(filter, "autoVerify") === "true";
-        const webSchemes = schemes.filter(isWeb);
-        const label = schemes.map((s) => `${s}://`).join(", ");
-
-        if (schemes.length === 0) {
-          findings.push({
-            level: "warning",
-            message: `An intent filter in ${name} has the VIEW action but no android:scheme, so it never matches a link.`,
-            fix: 'Add <data android:scheme="..." /> to the filter.',
+        const result = checkIntentFilter(
+          {
+            name,
             source,
-          });
-          continue;
-        }
-        if (attr(component, "exported") === "false" && !reportedExported) {
+            categories: nodes(filter.category).flatMap((n) => attr(n, "name") ?? []),
+            schemes: unique(data.flatMap((d) => attr(d, "scheme") ?? []).map((s) => resolvePlaceholders(s, source))),
+            hosts: unique(
+              data.flatMap((d) => {
+                const host = attr(d, "host");
+                const port = attr(d, "port");
+                return host ? [resolvePlaceholders(port ? `${host}:${port}` : host, source)] : [];
+              }),
+            ),
+            paths: data.flatMap((d) =>
+              PATH_TYPES.flatMap((type) => {
+                const value = attr(d, type);
+                return value ? [{ type, value: resolvePlaceholders(value, source) }] : [];
+              }),
+            ),
+            autoVerify: attr(filter, "autoVerify") === "true",
+          },
+          { kind: "manifest" },
+        );
+        patterns.push(...result.patterns);
+        findings.push(...result.findings);
+
+        if (attr(component, "exported") === "false" && result.patterns.length && !reportedExported) {
           reportedExported = true;
           findings.push({
             level: "error",
@@ -136,97 +238,12 @@ export function parseAndroid(root: string): AndroidScan | null {
             source,
           });
         }
-        if (!categories.includes(BROWSABLE)) {
-          findings.push({
-            level: "warning",
-            message: `The ${label} intent filter in ${name} is missing the BROWSABLE category, so links tapped in a browser won't open the app.`,
-            fix: 'Add <category android:name="android.intent.category.BROWSABLE" /> to the filter.',
-            source,
-          });
-        }
-        if (!categories.includes(DEFAULT)) {
-          findings.push({
-            level: "warning",
-            message: `The ${label} intent filter in ${name} is missing the DEFAULT category, so Android won't match it for ordinary link taps.`,
-            fix: 'Add <category android:name="android.intent.category.DEFAULT" /> to the filter.',
-            source,
-          });
-        }
-        if (webSchemes.length && hosts.length === 0) {
-          findings.push({
-            level: "error",
-            message: `An http(s) intent filter in ${name} has no android:host, so it claims every web URL and can't be verified as an App Link.`,
-            fix: 'Add <data android:host="example.com" /> for each domain you own.',
-            source,
-          });
-        } else if (webSchemes.length && !autoVerify) {
-          findings.push({
-            level: "warning",
-            message: `The App Link filter for ${hosts.join(", ")} in ${name} has no android:autoVerify="true", so Android won't verify it. Links open in the browser (Android 12+) or show an app chooser.`,
-            fix: 'Add android:autoVerify="true" to the <intent-filter> tag.',
-            source,
-          });
-        }
-        if (autoVerify && webSchemes.length === 0) {
-          findings.push({
-            level: "info",
-            message: `android:autoVerify only applies to http/https links, so it has no effect on the ${label} filter in ${name}.`,
-            source,
-          });
-        }
-        for (const value of [...schemes, ...hosts]) {
-          if (value === value.toLowerCase() || value.includes("${")) continue;
-          findings.push({
-            level: "warning",
-            message: `"${value}" in ${name} has uppercase letters. Android matches intent filters case-sensitively, but links are usually lowercase, so they may not match.`,
-            fix: `Use "${value.toLowerCase()}" in the manifest and in your links.`,
-            source,
-          });
-        }
-        for (const { type, value } of paths) {
-          const needsSlash = type === "path" || type === "pathPrefix" ? !value.startsWith("/") : type !== "pathSuffix" && /^[A-Za-z0-9]/.test(value);
-          if (!needsSlash) continue;
-          findings.push({
-            level: "warning",
-            message: `android:${type}="${value}" in ${name} doesn't start with "/", so it never matches.`,
-            fix: `Change it to "/${value}".`,
-            source,
-          });
-        }
-        if (paths.length && hosts.length === 0) {
-          findings.push({
-            level: "warning",
-            message: `Path rules in the ${label} filter in ${name} are ignored because the filter has no android:host.`,
-            fix: 'Add <data android:host="..." /> to the filter.',
-            source,
-          });
-        }
-
-        // Android combines every scheme, host and path in one filter.
-        for (const scheme of schemes) {
-          const kind = isWeb(scheme) ? "app-link" : "scheme";
-          const base: LinkPattern = {
-            platform: "android",
-            kind,
-            scheme,
-            autoVerify: kind === "app-link" ? autoVerify : undefined,
-            thirdParty: kind === "scheme" ? thirdPartyScheme(scheme) : undefined,
-            source,
-          };
-          if (hosts.length === 0) {
-            patterns.push(base);
-            continue;
-          }
-          for (const host of hosts) {
-            if (paths.length === 0) patterns.push({ ...base, host });
-            for (const { type, value } of paths) patterns.push({ ...base, host, path: value, pathType: type });
-          }
-        }
       }
     }
   }
 
   if (packageNames.size === 0) for (const pkg of manifestPackages) packageNames.add(pkg);
+  for (const p of patterns) if (p.kind === "scheme" && packageNames.has(p.scheme)) p.thirdParty ??= "Package name";
   const basePackage = [...packageNames][0] ?? "<package>";
   for (const { suffix, source } of suffixes) {
     findings.push({

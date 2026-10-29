@@ -1,0 +1,13 @@
+apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react"
+
+android {
+    namespace "com.example.bareapp"
+    defaultConfig {
+        applicationId "com.example.bareapp"
+        minSdkVersion rootProject.ext.minSdkVersion
+        versionCode 1
+        versionName "1.0"
+    }
+}

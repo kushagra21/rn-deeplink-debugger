@@ -38,6 +38,8 @@ export interface Finding {
 
 export interface ScanResult {
   root: string;
+  /** Set for Expo projects; `configFile` is app.json or app.config.*. */
+  expo: { configFile: string } | null;
   ios: { bundleIds: string[]; teamIds: string[] } | null;
   android: { packageNames: string[] } | null;
   patterns: LinkPattern[];

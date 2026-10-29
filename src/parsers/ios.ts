@@ -26,11 +26,16 @@ export interface XcodeTarget {
 type Dict = Record<string, unknown>;
 
 const APP_PRODUCT_TYPE = "com.apple.product-type.application";
-const ASSOCIATED_DOMAINS_KEY = "com.apple.developer.associated-domains";
+export const ASSOCIATED_DOMAINS_KEY = "com.apple.developer.associated-domains";
 const SCHEME_RE = /^[A-Za-z][A-Za-z0-9+.-]*$/;
 const TEST_PATH_RE = /(^|[\\/])[^\\/]*Tests([\\/]|$)/;
 
-const isDict = (value: unknown): value is Dict =>
+export const isValidScheme = (scheme: string) => SCHEME_RE.test(scheme);
+
+/** A valid spelling for an invalid scheme, e.g. `myapp` for `myapp://`. */
+export const suggestScheme = (scheme: string) => scheme.replace(/:.*$/, "").replace(/[^A-Za-z0-9+.-]/g, "");
+
+export const isDict = (value: unknown): value is Dict =>
   typeof value === "object" &&
   value !== null &&
   !Array.isArray(value) &&
@@ -257,8 +262,8 @@ export function parseIos(root: string): IosScan | null {
           if (seenSchemes.has(scheme)) continue;
           seenSchemes.add(scheme);
           if (/\$[({]/.test(scheme)) continue;
-          if (!SCHEME_RE.test(scheme)) {
-            const suggestion = scheme.replace(/:.*$/, "").replace(/[^A-Za-z0-9+.-]/g, "");
+          if (!isValidScheme(scheme)) {
+            const suggestion = suggestScheme(scheme);
             findings.push({
               level: "error",
               message: `URL scheme "${scheme}" in ${plistSource} is not valid, so iOS ignores it.`,
@@ -330,6 +335,9 @@ export function parseIos(root: string): IosScan | null {
       });
     }
   }
+
+  // Expo prebuild (and some OAuth SDKs) register the bundle ID as a scheme.
+  for (const p of patterns) if (p.kind === "scheme" && bundleIds.has(p.scheme)) p.thirdParty ??= "Bundle ID";
 
   if (teamIds.size === 0 && patterns.some((p) => p.kind === "universal")) {
     findings.push({

@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Shop",
+    "slug": "shop",
+    "scheme": "shop",
+    "ios": {
+      "bundleIdentifier": "com.example.shop",
+      "appleTeamId": "TEAM123456",
+      "associatedDomains": ["applinks:shop.example.com"]
+    },
+    "android": {
+      "package": "com.example.shop",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [{ "scheme": "https", "host": "shop.example.com", "pathPrefix": "/p" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    }
+  }
+}

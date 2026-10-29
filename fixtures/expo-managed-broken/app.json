@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Shop",
+    "slug": "shop",
+    "scheme": ["shop://", "shop"],
+    "ios": {
+      "bundleIdentifier": "com.example.shop",
+      "associatedDomains": ["shop.example.com"]
+    },
+    "android": {
+      "package": "com.example.shop",
+      "intentFilters": [
+        {
+          "action": "android.intent.action.VIEW",
+          "data": { "scheme": "https", "host": "old.example.com" },
+          "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "VIEW",
+          "data": [{ "scheme": "https", "host": "shop.example.com", "pathprefix": "/p" }],
+          "category": ["BROWSABLE", "android.intent.category.DEFAULT"]
+        }
+      ]
+    }
+  }
+}

@@ -56,6 +56,7 @@ function summary(findings: Finding[]): string {
 
 export function formatScan(result: ScanResult): string {
   const out: string[] = [];
+  if (result.expo) out.push(`${pc.bold("Expo")}     config ${result.expo.configFile}`);
   if (result.ios) out.push(`${pc.bold("iOS")}      bundle ID ${listOr(result.ios.bundleIds)}  ·  team ID ${listOr(result.ios.teamIds)}`);
   if (result.android) out.push(`${pc.bold("Android")}  package ${listOr(result.android.packageNames)}`);
 

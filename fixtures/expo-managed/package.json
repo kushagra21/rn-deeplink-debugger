@@ -1,0 +1,1 @@
+{ "name": "shop", "private": true, "dependencies": { "expo": "~58.0.0", "react-native": "0.82.0" } }
